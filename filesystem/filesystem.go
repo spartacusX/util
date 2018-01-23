@@ -6,7 +6,6 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
-	"strings"
 
 	log "github.com/sirupsen/logrus"
 )
@@ -53,7 +52,7 @@ func CopyFile(src, dst string) (err error) {
 // CopyDir recursively copies a directory tree, attempting to preserve permissions.
 // Source directory must exist, destination directory must *not* exist.
 // Symlinks are ignored and skipped.
-func CopyDir(src string, dst string, filters []string) (err error) {
+func CopyDir(src string, dst string) (err error) {
 	src = filepath.Clean(src)
 	dst = filepath.Clean(dst)
 
@@ -88,22 +87,8 @@ func CopyDir(src string, dst string, filters []string) (err error) {
 		srcPath := filepath.Join(src, entry.Name())
 		dstPath := filepath.Join(dst, entry.Name())
 
-		if filters != nil {
-			validPath := false
-			for _, filterPath := range filters {
-				if strings.HasPrefix(filterPath, srcPath) {
-					validPath = true
-					break
-				}
-			}
-
-			if !validPath {
-				continue
-			}
-		}
-
 		if entry.IsDir() {
-			err = CopyDir(srcPath, dstPath, filters)
+			err = CopyDir(srcPath, dstPath)
 			if err != nil {
 				return
 			}
