@@ -1,70 +1,91 @@
 package archive
 
 import (
+	"io/ioutil"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
-func TestArchive(t *testing.T) {
-	tar := Tar{
-		Name:    "testdata.tar",
-		SrcPath: "./testdata/testarchive",
-		DstPath: "./testdata/",
+type Case struct {
+	Name string
+	Src  string
+	err  error
+}
+
+func TestTarUnTar(t *testing.T) {
+	cases := []Case{
+		{"case1", "./testdata/tar", nil},
+		{"case2", "./testdata/tar", nil},
+		{"case3", "./testdata/tar", nil},
 	}
 
-	err := tar.Archive()
-	if err != nil {
-		t.Errorf("expected: no err, actual: err=%s", err.Error())
-	}
+	for _, c := range cases {
+		srcDir := filepath.Join(c.Src, c.Name)
+		tempDir := filepath.Join(c.Src, "temp")
+		tarPath := srcDir + ".tar"
 
-	if _, err = os.Stat(tar.DstPath); err != nil {
-		t.Errorf("expected: no err, actual: err=%s", err.Error())
-	} else {
-		os.Remove(tar.DstPath)
+		if err := Tar(srcDir); err != c.err {
+			t.Errorf("expected: %v, actual: err=%s", c.err, err.Error())
+		} else {
+			if _, err := os.Stat(tarPath); err != nil {
+				t.Errorf("expected: no err, actual: err=%s", err.Error())
+			}
+		}
+
+		if err := os.Mkdir(tempDir, 0755); err != nil {
+			t.Errorf("Failed to create directory: %s. err: %s", tempDir, err.Error())
+		}
+
+		if err := UnTar(tarPath, tempDir); err != nil {
+			t.Errorf("Failed to UnTar, err: %s", err.Error())
+		}
+
+		os.Remove(tarPath)
+
+		if CompareFile(srcDir, filepath.Join(c.Src, "temp", c.Name)) == false {
+			t.Errorf("Difference found for folder: %s between before and after archive", srcDir)
+		}
+
+		os.RemoveAll(tempDir)
 	}
 }
 
-func TestUnArchive(t *testing.T) {
-	tar := Tar{
-		Name:    "testdata.tar",
-		SrcPath: "./testdata/testunarchive/",
-		DstPath: "./testdata/testunarchive/",
-	}
-
-	err := tar.UnArchive()
+func CompareFile(src, dst string) bool {
+	sf, err := os.Stat(src)
 	if err != nil {
-		t.Errorf("expected: no err, actual: err=%s", err.Error())
+		return false
+	}
+	df, err := os.Stat(dst)
+	if err != nil {
+		return false
 	}
 
-	defer os.RemoveAll(tar.DstPath + "testarchive")
-
-	expectedPath := []string{
-		"testunarchive",
-		"testdata.tar",
-		"testarchive",
-		"testarchive/data1",
-		"testarchive/data2",
-		"testarchive/folder1",
-		"testarchive/folder1/f1d1",
-		"testarchive/folder1/f1d2",
-		"testarchive/folder2",
-		"testarchive/folder2/f1d1",
-		"testarchive/folder2/f1d2",
+	if !sf.IsDir() && !df.IsDir() {
+		return sf.Name() == df.Name() && sf.Mode() == df.Mode()
 	}
 
-	filepath.Walk(tar.DstPath, func(actualPath string, info os.FileInfo, err error) error {
-		failed := true
-		for _, path := range expectedPath {
-			if strings.Contains(actualPath, path) {
-				failed = false
+	srcFiles, err := ioutil.ReadDir(src)
+	if err != nil {
+		return false
+	}
+	dstFiles, err := ioutil.ReadDir(dst)
+	if err != nil {
+		return false
+	}
+
+	for _, srcFile := range srcFiles {
+		found := false
+		for _, dstFile := range dstFiles {
+			if srcFile.Name() == dstFile.Name() {
+				found = true
 				break
 			}
 		}
-		if failed {
-			t.Errorf("found invalid path: %s", actualPath)
+		if !found {
+			return false
 		}
-		return nil
-	})
+	}
+
+	return true
 }

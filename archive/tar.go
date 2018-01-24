@@ -2,7 +2,9 @@ package archive
 
 import (
 	"archive/tar"
+	"fmt"
 	"io"
+	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,24 +12,20 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-type Tar struct {
-	Name    string //archive file name
-	SrcPath string //directory to be archived
-	DstPath string //directory to place the archive file
-}
+// Tar archive the given file/directory to be a tar in the same path
+func Tar(src string) error {
+	logHeader := fmt.Sprintf("F: Tar, A: src=%s, M:", src)
+	log.Infof("%s Called", logHeader)
 
-func (t *Tar) Archive() error {
-	logHeader := "F: Tar.Archive, A: , M:"
-	log.Infof("%s archiving Name=%s Src=%s, Dst=%s", logHeader, t.Name, t.SrcPath, t.DstPath)
-
-	if _, err := os.Stat(t.SrcPath); err != nil {
+	if _, err := os.Stat(src); err != nil {
 		log.Errorf("%s error: %s", logHeader, err.Error())
 		return err
 	}
 
-	f, err := os.Create(strings.TrimRight(t.DstPath, "/") + "/" + t.Name)
+	target := src + ".tar"
+	f, err := os.Create(target)
 	if err != nil {
-		log.Errorf("%s error: %s", logHeader, err.Error())
+		log.Errorf("%s Can NOT create tar %s. error: %s", logHeader, target, err.Error())
 		return err
 	}
 
@@ -37,12 +35,17 @@ func (t *Tar) Archive() error {
 	defer tw.Close()
 
 	// walk path
-	return filepath.Walk(t.SrcPath, func(path string, info os.FileInfo, err error) error {
+	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
 		if info.Mode().IsDir() {
-			return nil
+			files, err := ioutil.ReadDir(path)
+			if err != nil {
+				return err
+			}
+			if len(files) > 0 {
+				return nil
+			}
 		}
 
-		log.Debugf("%s compressing file: %s", logHeader, path)
 		fr, err := os.Open(path)
 		if err != nil {
 			log.Errorf("%s error: %s", logHeader, err.Error())
@@ -56,40 +59,47 @@ func (t *Tar) Archive() error {
 			return err
 		}
 
-		h.Name = filepath.Base(t.SrcPath) + "/" + path[len(t.SrcPath)-1:]
+		h.Name = strings.Replace(path, strings.TrimRight(src, "/"), filepath.Base(src), 1)
 		if err = tw.WriteHeader(h); err != nil {
 			log.Errorf("%s can NOT write tar file header. error: %s", logHeader, err.Error())
 			return err
 		}
 
-		if _, err := io.Copy(tw, fr); err != nil {
-			log.Errorf("%s can NOT write to tar file. error: %s", logHeader, err.Error())
-			return err
+		if !info.Mode().IsDir() {
+			if _, err := io.Copy(tw, fr); err != nil {
+				log.Errorf("%s can NOT write to tar file. error: %s", logHeader, err.Error())
+				return err
+			}
 		}
 
 		return nil
 	})
 }
 
-func (t *Tar) UnArchive() error {
-	logHeader := "F: Tar.UnArchive, A: , M:"
-	log.Infof("%s extracting files in t.SrcPath=%s Name=%s to t.DstPath=%s", logHeader, t.SrcPath, t.Name, t.DstPath)
+// UnTar unarchive the given tar file to path dst
+func UnTar(src string, dst string) error {
+	logHeader := fmt.Sprintf("F: UnTar, A: src=%s, M:", src)
+	log.Infof("%s Called.", logHeader)
 
-	f, err := os.Open(strings.TrimRight(t.SrcPath, "/") + "/" + t.Name)
+	f, err := os.Open(src)
 	if err != nil {
-		log.Errorf("%s error: %s", logHeader, err.Error())
+		log.Errorf("%s Can NOT open tar: %s. error: %s", logHeader, src, err.Error())
 		return err
 	}
 
 	defer f.Close()
 
-	if _, err := os.Stat(t.DstPath); err != nil {
+	if _, err := os.Stat(dst); err != nil {
 		if os.IsNotExist(err) {
-			if err = os.MkdirAll(t.DstPath, 0755); err != nil {
-				log.Errorf("%s Failed to create targetDir: %s, Error: %s", logHeader, t.DstPath, err.Error())
+			if err = os.MkdirAll(dst, 0755); err != nil {
+				log.Errorf("%s Failed to create dst: %s, Error: %s", logHeader, dst, err.Error())
 				return err
 			}
+		} else {
+			log.Errorf("%s Got error when stat: %s. error: %s", logHeader, dst, err.Error())
+			return err
 		}
+
 	}
 
 	tarRdr := tar.NewReader(f)
@@ -104,7 +114,7 @@ func (t *Tar) UnArchive() error {
 			return err
 		}
 
-		target := filepath.Join(strings.TrimRight(t.DstPath, "/"), "/", header.Name)
+		target := filepath.Join(strings.TrimRight(dst, "/"), "/", header.Name)
 
 		switch header.Typeflag {
 		case tar.TypeDir:

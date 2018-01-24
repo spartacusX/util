@@ -2,40 +2,43 @@ package archive
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 )
 
-func TestCompress(t *testing.T) {
-	gzip := Gzip{
-		Src: "./testdata/gzip/compress/file1",
-		Dst: "./testdata/gzip/compress/file1.gz",
+func TestGzipUnGzip(t *testing.T) {
+	cases := []string{
+		"./testdata/gzip/case1",
+		"./testdata/gzip/case2.tar",
 	}
 
-	err := gzip.Compress()
-	if err != nil {
-		t.Errorf("expected: no err, actual: err=%s", err.Error())
-	}
+	for _, c := range cases {
+		err := Gzip(c)
+		if err != nil {
+			t.Errorf("expected: no err, actual: err=%s", err.Error())
+		}
 
-	_, err = os.Stat(gzip.Dst)
-	if err != nil {
-		t.Errorf("expected: %s exists, actual: err=%s", gzip.Dst, err.Error())
-	}
+		gzPath := c + ".gz"
+		_, err = os.Stat(gzPath)
+		if err != nil {
+			t.Errorf("expected: %s exists, actual: err=%s", gzPath, err.Error())
+		}
 
-	os.Remove(gzip.Dst)
-}
+		tempDir := filepath.Join(filepath.Dir(c), "temp")
+		if err := os.Mkdir(tempDir, 0755); err != nil {
+			t.Errorf("Failed to create directory: %s, err=%s", tempDir, err.Error())
+		}
 
-func TestUnCompress(t *testing.T) {
-	gzip := Gzip{
-		Src: "./testdata/gzip/uncompress/file1.gz",
-		Dst: "./testdata/gzip/uncompress/file1",
-	}
+		err = Ungzip(gzPath, tempDir)
+		if err != nil {
+			t.Errorf("expected: no err, actual: err=%s", err.Error())
+		}
 
-	err := gzip.Uncompress()
-	if err != nil {
-		t.Errorf("expected: no err, actual: err=%s", err.Error())
-	}
+		os.Remove(gzPath)
 
-	if _, err = os.Stat(gzip.Dst); err != nil {
-		t.Errorf("expected: no err, actual: err=%s", err.Error())
+		if _, err = os.Stat(filepath.Join(tempDir, filepath.Base(c))); err != nil {
+			t.Errorf("expected: no err, actual: err=%s", err.Error())
+		}
+		os.RemoveAll(tempDir)
 	}
 }
